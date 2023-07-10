@@ -1,4 +1,4 @@
-,year,month,Bail Not Posted,Bail Set,Non-Monetary Conditions,Other,ROR,Remand,Total_Arraignments
+,year,month,BailNotPosted_ArrRel,BailPosted_ArrRel,NonMonetaryCondit_ArrRel,Other_ArrRel,ROR_ArrRel,Remand_ArrRel,Total_Arraignments
 0,2018,1,2684,369,426,5921,10866,125,20391
 1,2018,2,2290,334,413,4773,10244,116,18170
 2,2018,3,2332,392,461,5037,11058,97,19377

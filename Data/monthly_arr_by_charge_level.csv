@@ -1,4 +1,4 @@
-,year,month,Felony,Infraction,Misdemeanor,Other,Violation,Total_Arraignments
+,year,month,Felony_ArrChg,Infraction_ArrChg,Misdemeanor_ArrChg,Other_ArrChg,Violation_ArrChg,Total_Arraignments
 0,2018,1,3406,155,16328,65,437,20391
 1,2018,2,3141,141,14384,64,440,18170
 2,2018,3,3276,157,15493,64,388,19378
