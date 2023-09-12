@@ -93,6 +93,15 @@ latest_discharges = monthly_counts[monthly_counts['Year-Mo'] == str(currentYear)
 # Create Streamlit app
 st.title('Riker\'s Island Monthly Population Analysis')
 
+# "with" notation
+with st.sidebar:
+    st.header('Brought to you by the Data Collabortaive for Justice at John Jay College of Criminal Justice')
+    
+    st.markdown('The data used in this analysis are provided to us through the [NYC Open Data Portal](https://opendata.cityofnewyork.us/).')
+
+    st.write('The two datasets used are the Department of Corrections (DOC) Inmate Admissions and Discharges. These datasets are updated at the beginning of each month and contains the admission and discharge date of each person under DOC custody dating back to 2014.')
+    st.image("dcj_logo.jpg")
+    st.markdown("[https://datacollaborativeforjustice.org/](https://datacollaborativeforjustice.org/)")
 # Display the three print statements as text blocks
 st.header('Population Change Analysis')
 st.write(f"Last month the population in Riker's facilities changed by {latest_daily_avg} per day.")
@@ -121,7 +130,7 @@ st.altair_chart(chart, use_container_width=True)
 st.header('Histogram of Monthly Population Change')
 
 # Add a slider for filtering data by 'Year-Mo'
-selected_year_month = st.select_slider('Select Year-Mo', options=monthly_counts['Year-Mo'].unique())
+selected_year_month = st.select_slider('Select Lower Bound Year-Mo', options=monthly_counts['Year-Mo'].unique())
 
 # Filter the data based on the selected 'Year-Mo'
 filtered_data = monthly_counts[monthly_counts['Year-Mo'] >= selected_year_month]
@@ -142,7 +151,7 @@ fig.add_trace(go.Histogram(
 # Create a histogram for the filtered data
 fig.add_trace(go.Histogram(
     x=filtered_data['Population Change'],
-    name='Population Change distribution between {} and {}'.format(
+    name='Dataset between {} and {}'.format(
         selected_year_month,
         monthly_counts.sort_values(by=['year', 'month']).tail(1)['Year-Mo'].values[0]
     ),
@@ -182,3 +191,8 @@ fig.add_trace(go.Scatter(
 ))
 
 st.plotly_chart(fig)
+
+#add mean and std for the two distributions
+st.write(f"The average monthly population change for the entire dataset is: {round(monthly_counts['Population Change'].mean(),2)} +/- {round(monthly_counts['Population Change'].std(),2)}")
+st.write(f"The average monthly population change from {selected_year_month} to {monthly_counts.sort_values(by=['year', 'month']).tail(1)['Year-Mo'].values[0]} is: {round(filtered_data['Population Change'].mean(),2)} +/- {round(filtered_data['Population Change'].std(),2)}")
+
