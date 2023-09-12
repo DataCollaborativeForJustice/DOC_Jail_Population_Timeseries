@@ -119,11 +119,6 @@ st.altair_chart(chart, use_container_width=True)
 
 # Create a histogram of monthly population change with 50 bins using Matplotlib
 st.header('Histogram of Monthly Population Change')
-# fig, ax = plt.subplots()
-# ax.hist(monthly_counts['Population Change'], bins=50)
-# ax.set_xlabel('Population Change')
-# ax.set_ylabel('Frequency')
-# st.pyplot(fig)
 
 # Add a slider for filtering data by 'Year-Mo'
 selected_year_month = st.select_slider('Select Year-Mo', options=monthly_counts['Year-Mo'].unique())
@@ -131,40 +126,6 @@ selected_year_month = st.select_slider('Select Year-Mo', options=monthly_counts[
 # Filter the data based on the selected 'Year-Mo'
 filtered_data = monthly_counts[monthly_counts['Year-Mo'] >= selected_year_month]
 
-# Create an interactive bar chart using Plotly
-# fig = px.histogram(
-#     filtered_data,
-#     x='Population Change',
-#     nbins=50,
-#     labels={'Population Change': 'Population Change'},
-#     title='Histogram of Monthly Population Change',
-# )
-
-# # Set fixed x-axis limits
-# fig.update_xaxes(range=[-1200, 1200]) 
-
-# # Create a static histogram for the entire dataset
-# entire_data_histogram = go.Histogram(
-#     x = monthly_counts['Population Change'],
-#     name = 'Entire Population Change Distribution',
-#     opacity = 0.5,  # Adjust opacity for desired visibility
-#     marker = dict(color='grey')
-# )
-
-# # Add the entire dataset histogram to the same figure
-# fig.add_trace(entire_data_histogram)
-
-# # Set the legend labels
-# fig.update_layout(legend_title_text='Legend')
-# fig.update_traces(
-#     showlegend=True,
-#     legendgroup='Population Change Distribution',
-#     name='Population Change distribution between {} and {}'.format(
-#         selected_year_month,
-#         monthly_counts.sort_values(by=['year', 'month']).tail(1)['Year-Mo'].values[0]
-#     )
-# )
-# st.plotly_chart(fig)
 
 # Create an interactive histogram using Plotly for filtered data
 fig = go.Figure()
