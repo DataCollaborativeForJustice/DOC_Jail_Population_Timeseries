@@ -133,7 +133,7 @@ fig = go.Figure()
 # Create a histogram for the entire dataset
 fig.add_trace(go.Histogram(
     x=monthly_counts['Population Change'],
-    name='Entire Population Change Distribution',
+    name='Entire Dataset',
     histnorm='probability',  # Normalize to probability
     opacity=0.5,  # Adjust opacity for desired visibility
     marker=dict(color='grey')
@@ -156,6 +156,29 @@ fig.update_xaxes(range=[-1200, 1200])  # Adjust the range as per your preference
 
 # Set the legend labels
 fig.update_layout(legend_title_text='Legend')
+# Update axis labels
+fig.update_xaxes(title='Monthly Population Change')
+fig.update_yaxes(title='Probability Density')
 # Stack bars on top of each other
 fig.update_layout(barmode='overlay')
+
+# Add marginal rug visualization for the filtered data (changes with slider)
+fig.add_trace(go.Scatter(
+    x=filtered_data['Population Change'],
+    y=[-.01] * len(filtered_data),
+    mode='markers',
+    marker=dict(color='blue', size=3),
+    showlegend=False,
+    hoverinfo='skip',  # Hide hover info for rug
+))
+
+fig.add_trace(go.Scatter(
+    x=monthly_counts['Population Change'],
+    y=[-.016] * len(filtered_data),
+    mode='markers',
+    marker=dict(color='grey', size=3),
+    showlegend=False,
+    hoverinfo='skip',  # Hide hover info for rug
+))
+
 st.plotly_chart(fig)
