@@ -37,4 +37,5 @@ def get_data(url):
     
     df['admitted_dt'] =  df['admitted_dt'].dt.date
     df['discharged_dt'] =  df['discharged_dt'].dt.date
+
     return df

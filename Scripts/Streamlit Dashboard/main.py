@@ -4,37 +4,78 @@ import matplotlib.pyplot as plt
 import streamlit as st
 import altair as alt
 import datetime
+import os
+import plotly.express as px
+import plotly.graph_objects as go
+
+
+#set working directory
+if os.getcwd() != "C:\\Users\\emjoh\\OneDrive\\Documents\\DCJ Analyses\\Jail_Population_Timeseries\\Scripts\\Streamlit Dashboard":
+    os.chdir(os.getcwd() +"\\Jail_Population_Timeseries\\Scripts\\Streamlit Dashboard")
+
+#import functions
 from functions import get_data
 
 #define socrata urls from NYC open data portal
 admit_url = 'https://data.cityofnewyork.us/resource/6teu-xtgp.json'
 dis_url = 'https://data.cityofnewyork.us/resource/94ri-3ium.json'
-#Step 1: get data
-admissions = get_data(admit_url)
-discharges = get_data(dis_url)
 
-#Step 2: Aggregate to monthly admit/discharge
-monthly_admits = admissions[['admitted_yr','admitted_mo','inmateid']].groupby(by = ['admitted_yr','admitted_mo']).nunique().reset_index()
-monthly_admits = monthly_admits.rename(columns = {'admitted_yr':'year',
-                                                'admitted_mo':'month',
-                                                'inmateid':'Admissions'})
-monthly_discharges = discharges[['discharged_yr','discharged_mo','inmateid']].groupby(by = ['discharged_yr','discharged_mo']).nunique().reset_index()
-monthly_discharges = monthly_discharges.rename(columns = {'discharged_yr':'year',
-                                                        'discharged_mo':'month',
-                                                        'inmateid':'Discharges'})
-
-#merge
-monthly_counts = monthly_admits.merge(monthly_discharges, on = ['year','month'])
-monthly_counts['Population Change'] = monthly_counts['Admissions'] - monthly_counts['Discharges']
-monthly_counts['Year-Mo'] = ['-'.join(i) for i in zip(monthly_counts["year"].map(str),monthly_counts["month"].map(str))]
-
-
-monthly_counts.head()
-
-#get lastest month's daily population change
 currentMonth = datetime.datetime.now().month
 currentYear = datetime.datetime.now().year
 
+while True:
+    try:
+        # Try to get the latest dataset; if it doesn't exist, let's pull the data from the portal
+        latest_data = pd.read_csv('monthly_rikers_population_change.csv')
+        admissions = pd.read_csv('DOC_admissions.csv')
+        discharges = pd.read_csv('DOC_discharges.csv')
+        print('Files exist')
+        # If this file exists, check the last month & year
+        last_yr_mo = latest_data.sort_values(by=['year', 'month']).tail(1)['Year-Mo'].values[0]
+
+        if last_yr_mo == (datetime.datetime.today().replace(day=1) - datetime.timedelta(days=1)).strftime("%Y-%#m"):
+            # If the file exists and the last data point is current, break the loop
+            print('Files are up to date')
+            monthly_counts = latest_data.copy()
+            break
+        else:
+            print('Files are NOT up to date, please wait while I grab the newest data.')
+            # If the last data point is not current, continue to the next iteration of the loop
+            pass
+    except Exception as e:
+        # If the try statement raised an error, i.e., there is no file called latest data, print the error
+        print(e)
+        #Step 1: get data if we anticipate a new file from the portal, otherwise grab the previously saved files
+
+        admissions = get_data(admit_url)
+        print('Successfully downloaded admission data')
+        discharges = get_data(dis_url)
+        print('Successfully downloaded discharge data')
+
+        #Step 2: Aggregate to monthly admit/discharge
+        monthly_admits = admissions[['admitted_yr','admitted_mo','inmateid']].groupby(by = ['admitted_yr','admitted_mo']).nunique().reset_index()
+        monthly_admits = monthly_admits.rename(columns = {'admitted_yr':'year',
+                                                        'admitted_mo':'month',
+                                                        'inmateid':'Admissions'})
+        monthly_discharges = discharges[['discharged_yr','discharged_mo','inmateid']].groupby(by = ['discharged_yr','discharged_mo']).nunique().reset_index()
+        monthly_discharges = monthly_discharges.rename(columns = {'discharged_yr':'year',
+                                                                'discharged_mo':'month',
+                                                                'inmateid':'Discharges'})
+
+        #merge
+        monthly_counts = monthly_admits.merge(monthly_discharges, on = ['year','month'])
+        monthly_counts['Population Change'] = monthly_counts['Admissions'] - monthly_counts['Discharges']
+        monthly_counts['Year-Mo'] = ['-'.join(i) for i in zip(monthly_counts["year"].map(str),monthly_counts["month"].map(str))]
+        print('Successfully merged data')
+        #save
+        monthly_counts.to_csv('monthly_rikers_population_change.csv')
+        admissions.to_csv('DOC_admissions.csv')
+        discharges.to_csv('DOC_discharges.csv')
+        print('Successfully saved data')
+        monthly_counts.head()
+        break
+
+#get lastest month's daily population change
 last_mo_admissions = admissions[(admissions['admitted_yr'] == currentYear) & (admissions['admitted_mo'] == currentMonth-1)]
 last_mo_discharges = discharges[(discharges['discharged_yr'] == currentYear) & (discharges['discharged_mo'] == currentMonth-1)]
 
@@ -58,17 +99,6 @@ st.write(f"Last month the population in Riker's facilities changed by {latest_da
 st.write(f"Last month {latest_admissions} people were admitted to a Riker's facility.")
 st.write(f"Last month {latest_discharges} people were discharged from a Riker's facility.")
 
-# # Create an interactive time series plot
-# st.header('Monthly Jail Population Change Time Series')
-# st.line_chart(monthly_counts.set_index('Year-Mo')['Population Change'])
-
-# # Allow users to hover over data points to see additional information
-# st.write("Hover over the plot to see more details.")
-
-# # Optionally, you can add tooltips for Admissions and Discharges
-# hover_data = {'Population Change': True, 'Admissions': monthly_counts['Admissions'], 'Discharges': monthly_counts['Discharges']}
-# st.line_chart(monthly_counts.set_index('Year-Mo'), use_container_width=True, chart_data=hover_data)
-
 # Create an interactive time series plot with 'o' markers and hover data using Altair
 st.header('Monthly Jail Population Change Time Series')
 # Use Altair to create the chart
@@ -86,5 +116,85 @@ chart = alt.Chart(monthly_counts).mark_line().encode(
 ).interactive()
 
 st.altair_chart(chart, use_container_width=True)
-# Display the Streamlit app
 
+# Create a histogram of monthly population change with 50 bins using Matplotlib
+st.header('Histogram of Monthly Population Change')
+# fig, ax = plt.subplots()
+# ax.hist(monthly_counts['Population Change'], bins=50)
+# ax.set_xlabel('Population Change')
+# ax.set_ylabel('Frequency')
+# st.pyplot(fig)
+
+# Add a slider for filtering data by 'Year-Mo'
+selected_year_month = st.select_slider('Select Year-Mo', options=monthly_counts['Year-Mo'].unique())
+
+# Filter the data based on the selected 'Year-Mo'
+filtered_data = monthly_counts[monthly_counts['Year-Mo'] >= selected_year_month]
+
+# Create an interactive bar chart using Plotly
+# fig = px.histogram(
+#     filtered_data,
+#     x='Population Change',
+#     nbins=50,
+#     labels={'Population Change': 'Population Change'},
+#     title='Histogram of Monthly Population Change',
+# )
+
+# # Set fixed x-axis limits
+# fig.update_xaxes(range=[-1200, 1200]) 
+
+# # Create a static histogram for the entire dataset
+# entire_data_histogram = go.Histogram(
+#     x = monthly_counts['Population Change'],
+#     name = 'Entire Population Change Distribution',
+#     opacity = 0.5,  # Adjust opacity for desired visibility
+#     marker = dict(color='grey')
+# )
+
+# # Add the entire dataset histogram to the same figure
+# fig.add_trace(entire_data_histogram)
+
+# # Set the legend labels
+# fig.update_layout(legend_title_text='Legend')
+# fig.update_traces(
+#     showlegend=True,
+#     legendgroup='Population Change Distribution',
+#     name='Population Change distribution between {} and {}'.format(
+#         selected_year_month,
+#         monthly_counts.sort_values(by=['year', 'month']).tail(1)['Year-Mo'].values[0]
+#     )
+# )
+# st.plotly_chart(fig)
+
+# Create an interactive histogram using Plotly for filtered data
+fig = go.Figure()
+
+# Create a histogram for the entire dataset
+fig.add_trace(go.Histogram(
+    x=monthly_counts['Population Change'],
+    name='Entire Population Change Distribution',
+    histnorm='probability',  # Normalize to probability
+    opacity=0.5,  # Adjust opacity for desired visibility
+    marker=dict(color='grey')
+))
+
+# Create a histogram for the filtered data
+fig.add_trace(go.Histogram(
+    x=filtered_data['Population Change'],
+    name='Population Change distribution between {} and {}'.format(
+        selected_year_month,
+        monthly_counts.sort_values(by=['year', 'month']).tail(1)['Year-Mo'].values[0]
+    ),
+    histnorm='probability',  # Normalize to probability
+    opacity=0.7,  # Adjust opacity for desired visibility
+    marker=dict(color='blue')
+))
+
+# Set fixed x-axis limits
+fig.update_xaxes(range=[-1200, 1200])  # Adjust the range as per your preference
+
+# Set the legend labels
+fig.update_layout(legend_title_text='Legend')
+# Stack bars on top of each other
+fig.update_layout(barmode='overlay')
+st.plotly_chart(fig)
