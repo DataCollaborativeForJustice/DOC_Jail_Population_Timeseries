@@ -44,7 +44,7 @@ def get_file(bucket_name,folder_name,file_name):
             return e
         
 #test functions for the streamlit dashboard
-def get_agg_admit_dis_data(first_st_date_adp, api_url, date_col):
+def get_agg_admit_dis_data(first_st_date_adp, api_url, date_col, sample_freq):
     """
     first_st_date_adp: datetime.date
         The date of the first start date 30-day period in the interval data
@@ -52,6 +52,9 @@ def get_agg_admit_dis_data(first_st_date_adp, api_url, date_col):
         URL of Socrata API endpoint of interest
     date_col: str
         Either date_col or 'DISCHARGED_DT' depending which dataset you are querying from
+    sample_freq: int
+        The frequency in which we want to resample the ts data. This should be an integer that represents the number of days to resample the
+        daily timeseries data we query from the open portal.
     """
     if date_col == 'ADMITTED_DT':
         count_col = 'admission_count'
@@ -89,11 +92,11 @@ def get_agg_admit_dis_data(first_st_date_adp, api_url, date_col):
     min_date = df[date_col].min()
     #aggregate to 30 day intervals
     # Resample the DataFrame to 30-day intervals
-    interval_data = df.resample('30D', on=date_col, origin= min_date, closed='left', label='left').agg({count_col: 'sum'}).fillna(0).reset_index()
+    interval_data = df.resample(f'{sample_freq}D', on=date_col, origin= min_date, closed='left', label='left').agg({count_col: 'sum'}).fillna(0).reset_index()
     # Rename columns
     interval_data = interval_data.rename(columns={date_col: 'Start Date', count_col: count_col})
     # Calculate the Start Date column
-    interval_data['End Date'] = interval_data['Start Date'] + pd.to_timedelta(29, unit='D')
+    interval_data['End Date'] = interval_data['Start Date'] + pd.to_timedelta(sample_freq-1, unit='D')
     #add date related regressors
     interval_data['Month'] = interval_data['Start Date'].dt.month
     interval_data['Year'] = interval_data['Start Date'].dt.year
@@ -103,32 +106,212 @@ def get_agg_admit_dis_data(first_st_date_adp, api_url, date_col):
     interval_data['Start Date'] = interval_data['Start Date'].dt.tz_localize('America/New_York').dt.date
     interval_data['End Date'] = interval_data['End Date'].dt.tz_localize('America/New_York').dt.date
     
-    #make sure the last data point has a reasonable admission count
-    #if the period has less than 30 days of admission data, we will use the avg of the last two data points
-    #as the adjusted admission count for the given time period
+    # drop rows where Days to Max Date are less than the frequency intervals
+    interval_data = interval_data[interval_data['Days to Max Date']>=sample_freq]
 
-    adj_count = []
-    for i, row in interval_data.iterrows():
-        if row['Days to Max Date'] < 30:
-            ma2 = (interval_data.iloc[i-1,interval_data.columns.get_loc(count_col)] +
-                        interval_data.iloc[i-2,interval_data.columns.get_loc(count_col)]) / 2
-            adj_count.append(round(ma2))
-        else:
-            adj_count.append(row[count_col])
-    #clean up to column name for final dataframe
-    final_col_name = ' '.join([word.capitalize() for word in count_col.split('_')])
-    interval_data['Adjusted '+final_col_name] = adj_count
-    
-    _30_day_admit_dis_df = interval_data.drop(columns = count_col)
-    
-    return _30_day_admit_dis_df
+    return interval_data
 
-
-#test functions for the streamlit dashboard
-def get_los_data(first_st_date_adp):
+def get_crime_data(first_st_date_adp, sample_freq):
     """
     first_st_date_adp: datetime.date
         The date of the first start date 30-day period in the interval data
+    sample_freq: int
+        The frequency in which we want to resample the ts data. This should be an integer that represents the number of days to resample the
+        daily timeseries data we query from the open portal.
+    """
+    historic_crime_url = 'https://data.cityofnewyork.us/resource/qgea-i56i.json'
+    current_yr_crime_url = 'https://data.cityofnewyork.us/resource/5uac-w243.json'
+    date_col = 'CMPLNT_FR_DT'
+
+    # Define the SQL query separately
+    sql_query_1 = ("SELECT "
+                f"date_trunc_ymd({date_col}) as crime_date, "
+                "COUNT(CMPLNT_NUM) as total_felony_crimes, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%MURDER & NON-NEGL. MANSLAUGHTER%' or OFNS_DESC = 'HOMICIDE-NEGLIGENT,UNCLASSIFIE' THEN CMPLNT_NUM END) as murder_homicide_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%ROBBERY%' THEN CMPLNT_NUM END) as robbery_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%ASSAULT%' THEN CMPLNT_NUM END) as assault_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%BURGLARY%' THEN CMPLNT_NUM END) as burglary_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%RAPE%' THEN CMPLNT_NUM END) as rape_count, "
+                "COUNT(CASE WHEN OFNS_DESC = 'GRAND LARCENY' THEN CMPLNT_NUM END) as grand_larceny_count, "
+                "COUNT(CASE WHEN OFNS_DESC = 'GRAND LARCENY OF MOTOR VEHICLE' THEN CMPLNT_NUM END) as grand_larceny_vehicle_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%WEAPON%' THEN CMPLNT_NUM END) as weapons_count "
+                f"WHERE {date_col} >= '{first_st_date_adp}' "
+                "AND LAW_CAT_CD = 'FELONY' "
+                f"GROUP BY crime_date "
+                "ORDER BY crime_date "
+                "LIMIT 10000")
+
+    # Encode SQL query for URL
+    encoded_query = urllib.parse.quote(sql_query_1)
+
+    # Construct the full URL query
+    final_query = f'{historic_crime_url}?$query={encoded_query}'
+
+    # Send the request and load the response data
+    response = urllib.request.urlopen(final_query)
+    data = json.loads(response.read())
+    df_historic = pd.json_normalize(data)
+
+    #ytd data and then append
+    latest_historic_date = pd.to_datetime(df_historic['crime_date']).max().date()
+
+    sql_query_2 = ("SELECT "
+                f"date_trunc_ymd({date_col}) as crime_date, "
+                "COUNT(CMPLNT_NUM) as total_felony_crimes, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%MURDER & NON-NEGL. MANSLAUGHTER%' or OFNS_DESC = 'HOMICIDE-NEGLIGENT,UNCLASSIFIE' THEN CMPLNT_NUM END) as murder_homicide_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%ROBBERY%' THEN CMPLNT_NUM END) as robbery_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%ASSAULT%' THEN CMPLNT_NUM END) as assault_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%BURGLARY%' THEN CMPLNT_NUM END) as burglary_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%RAPE%' THEN CMPLNT_NUM END) as rape_count, "
+                "COUNT(CASE WHEN OFNS_DESC = 'GRAND LARCENY' THEN CMPLNT_NUM END) as grand_larceny_count, "
+                "COUNT(CASE WHEN OFNS_DESC = 'GRAND LARCENY OF MOTOR VEHICLE' THEN CMPLNT_NUM END) as grand_larceny_vehicle_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%WEAPON%' THEN CMPLNT_NUM END) as weapons_count "
+                f"WHERE {date_col} > '{latest_historic_date}' "
+                "AND LAW_CAT_CD = 'FELONY' "
+                f"GROUP BY crime_date "
+                "ORDER BY crime_date "
+                "LIMIT 10000")
+    # Encode SQL query for URL
+    encoded_query = urllib.parse.quote(sql_query_2)
+
+    # Construct the full URL query
+    final_query = f'{current_yr_crime_url}?$query={encoded_query}'
+
+    # Send the request and load the response data
+    response = urllib.request.urlopen(final_query)
+    data = json.loads(response.read())
+    df_current = pd.json_normalize(data)
+    #append
+    df = pd.concat([df_historic,df_current],ignore_index = True)
+    #convert data types
+    df['crime_date'] = pd.to_datetime(df['crime_date'])
+    df[df.columns[1:]] = df[df.columns[1:]].astype(int)
+    #aggregate to 30 day averages
+    #define max and min dates for future calculations
+    max_date = df['crime_date'].max()
+    min_date = df['crime_date'].min()
+    #aggregate to 30 day intervals
+    # Resample the DataFrame to 30-day intervals
+    interval_crime_counts = df.resample(f'{sample_freq}D', on='crime_date', origin= min_date, closed='left', label='left').sum().round().fillna(0).reset_index()
+    interval_crime_counts = interval_crime_counts.rename(columns = {'crime_date':'Start Date'})
+    interval_crime_counts['End Date'] = interval_crime_counts['Start Date'] + pd.to_timedelta(sample_freq-1, unit='D')
+
+    #calculate the days between start period and last date in admission df
+    interval_crime_counts['Days to Max Date'] = (max_date - interval_crime_counts['Start Date']).dt.days
+    # Display just the date portion of the start/end date columns and localize to specific timezone
+    interval_crime_counts['Start Date'] = interval_crime_counts['Start Date'].dt.tz_localize('America/New_York').dt.date
+    interval_crime_counts['End Date'] = interval_crime_counts['End Date'].dt.tz_localize('America/New_York').dt.date
+    
+    # drop rows where Days to Max Date are less than the frequency intervals
+    interval_crime_counts = interval_crime_counts[interval_crime_counts['Days to Max Date']>=sample_freq]
+
+    return interval_crime_counts
+
+def get_arrest_data(first_st_date_adp, sample_freq):
+    """
+    first_st_date_adp: datetime.date
+        The date of the first start date 30-day period in the interval data
+    sample_freq: int
+        The frequency in which we want to resample the ts data. This should be an integer that represents the number of days to resample the
+        daily timeseries data we query from the open portal.
+    """
+    historic_arrest_url = 'https://data.cityofnewyork.us/resource/8h9b-rp9u.json'
+    current_yr_arrest_url = 'https://data.cityofnewyork.us/resource/uip8-fykc.json'
+    date_col = 'ARREST_DATE'
+
+    # Define the SQL query separately
+    sql_query_1 = ("SELECT "
+                f"date_trunc_ymd({date_col}) as {date_col}, "
+                "COUNT(ARREST_KEY) as total_felony_arrest, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%MURDER & NON-NEGL. MANSLAUGHTE%' or OFNS_DESC LIKE '%HOMICIDE-NEGLIGENT,UNCLASSIFIE%' THEN ARREST_KEY END) as arrest_murder_homicide_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%ROBBERY%' THEN ARREST_KEY END) as arrest_robbery_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%ASSAULT%' THEN ARREST_KEY END) as arrest_assault_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%BURGLARY%' THEN ARREST_KEY END) as arrest_burglary_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%RAPE%' THEN ARREST_KEY END) as arrest_rape_count, "
+                "COUNT(CASE WHEN OFNS_DESC = 'GRAND LARCENY' THEN ARREST_KEY END) as arrest_grand_larceny_count, "
+                "COUNT(CASE WHEN OFNS_DESC = 'GRAND LARCENY OF MOTOR VEHICLE' THEN ARREST_KEY END) as arrest_grand_larceny_vehicle_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%WEAPON%' THEN ARREST_KEY END) as arrest_weapons_count "
+                f"WHERE {date_col} >= '{first_st_date_adp}' "
+                "AND LAW_CAT_CD = 'F' "
+                f"GROUP BY {date_col} "
+                f"ORDER BY {date_col} "
+                "LIMIT 10000")
+
+    # Encode SQL query for URL
+    encoded_query = urllib.parse.quote(sql_query_1)
+
+    # Construct the full URL query
+    final_query = f'{historic_arrest_url}?$query={encoded_query}'
+
+    # Send the request and load the response data
+    response = urllib.request.urlopen(final_query)
+    data = json.loads(response.read())
+    df_historic = pd.json_normalize(data)
+
+    #ytd data and then append
+    latest_historic_date = pd.to_datetime(df_historic[date_col]).max().date()
+
+    sql_query_2 = ("SELECT "
+                f"date_trunc_ymd({date_col}) as {date_col}, "
+                "COUNT(ARREST_KEY) as total_felony_arrest, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%MURDER & NON-NEGL. MANSLAUGHTE%' or OFNS_DESC LIKE '%HOMICIDE-NEGLIGENT,UNCLASSIFIE%' THEN ARREST_KEY END) as arrest_murder_homicide_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%ROBBERY%' THEN ARREST_KEY END) as arrest_robbery_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%ASSAULT%' THEN ARREST_KEY END) as arrest_assault_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%BURGLARY%' THEN ARREST_KEY END) as arrest_burglary_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%RAPE%' THEN ARREST_KEY END) as arrest_rape_count, "
+                "COUNT(CASE WHEN OFNS_DESC = 'GRAND LARCENY' THEN ARREST_KEY END) as arrest_grand_larceny_count, "
+                "COUNT(CASE WHEN OFNS_DESC = 'GRAND LARCENY OF MOTOR VEHICLE' THEN ARREST_KEY END) as arrest_grand_larceny_vehicle_count, "
+                "COUNT(CASE WHEN OFNS_DESC LIKE '%WEAPON%' THEN ARREST_KEY END) as arrest_weapons_count "
+                f"WHERE {date_col} > '{latest_historic_date}' "
+                "AND LAW_CAT_CD = 'F' "
+                f"GROUP BY {date_col} "
+                f"ORDER BY {date_col} "
+                "LIMIT 10000")
+    # Encode SQL query for URL
+    encoded_query = urllib.parse.quote(sql_query_2)
+
+    # Construct the full URL query
+    final_query = f'{current_yr_arrest_url}?$query={encoded_query}'
+
+    # Send the request and load the response data
+    response = urllib.request.urlopen(final_query)
+    data = json.loads(response.read())
+    df_current = pd.json_normalize(data)
+    #append
+    df = pd.concat([df_historic,df_current],ignore_index = True)
+    #convert data types
+    df[date_col] = pd.to_datetime(df[date_col])
+    df[df.columns[1:]] = df[df.columns[1:]].astype(int)
+    #aggregate to 30 day averages
+    #define max and min dates for future calculations
+    max_date = df[date_col].max()
+    min_date = df[date_col].min()
+    #aggregate to 30 day intervals
+    # Resample the DataFrame to 30-day intervals
+    interval_arrest_counts = df.resample(f'{sample_freq}D', on=date_col, origin= min_date, closed='left', label='left').sum().round().fillna(0).reset_index()
+    interval_arrest_counts = interval_arrest_counts.rename(columns = {date_col:'Start Date'})
+    interval_arrest_counts['End Date'] = interval_arrest_counts['Start Date'] + pd.to_timedelta(sample_freq-1, unit='D')
+
+    #calculate the days between start period and last date in admission df
+    interval_arrest_counts['Days to Max Date'] = (max_date - interval_arrest_counts['Start Date']).dt.days
+    # Display just the date portion of the start/end date columns and localize to specific timezone
+    interval_arrest_counts['Start Date'] = interval_arrest_counts['Start Date'].dt.tz_localize('America/New_York').dt.date
+    interval_arrest_counts['End Date'] = interval_arrest_counts['End Date'].dt.tz_localize('America/New_York').dt.date
+
+    # drop rows where Days to Max Date are less than the frequency intervals
+    interval_arrest_counts = interval_arrest_counts[interval_arrest_counts['Days to Max Date']>=sample_freq]
+
+    return interval_arrest_counts
+
+#test functions for the streamlit dashboard
+def get_los_data(first_st_date_adp, sample_freq):
+    """
+    first_st_date_adp: datetime.date
+        The date of the first start date period in the interval data of jail population
+    sample_freq: int
+        The frequency in which we want to resample the ts data. This should be an integer that represents the number of days to resample the
+        daily timeseries data we query from the open portal.
+    
     """
     dis_url = 'https://data.cityofnewyork.us/resource/94ri-3ium.json'
 
@@ -164,11 +347,11 @@ def get_los_data(first_st_date_adp):
     min_date = dis_df['DISCHARGED_DT'].min()
     #aggregate to 30 day intervals
     # Resample the DataFrame to 30-day intervals
-    interval_data = dis_df.resample('30D', on='DISCHARGED_DT', origin= min_date, closed='left', label='left').agg({'LOS': 'mean'}).fillna(0).reset_index()
+    interval_data = dis_df.resample(f'{sample_freq}D', on='DISCHARGED_DT', origin= min_date, closed='left', label='left').agg({'LOS': 'mean'}).fillna(0).reset_index()
     # Rename columns
     interval_data = interval_data.rename(columns={'DISCHARGED_DT': 'Start Date', 'LOS': 'Avg LOS Days'})
     # Calculate the Start Date column
-    interval_data['End Date'] = interval_data['Start Date'] + pd.to_timedelta(29, unit='D')
+    interval_data['End Date'] = interval_data['Start Date'] + pd.to_timedelta(sample_freq-1, unit='D')
     #add date related regressors
     interval_data['Discharge Month'] = interval_data['Start Date'].dt.month
     interval_data['Discharge Year'] = interval_data['Start Date'].dt.year
@@ -178,24 +361,10 @@ def get_los_data(first_st_date_adp):
     interval_data['Start Date'] = interval_data['Start Date'].dt.tz_localize('America/New_York').dt.date
     interval_data['End Date'] = interval_data['End Date'].dt.tz_localize('America/New_York').dt.date
     
-    #make sure the last data point has a reasonable admission count
-    #if the period has less than 30 days of admission data, we will use the avg of the last two data points
-    #as the adjusted admission count for the given time period
+    # drop rows where Days to Max Date are less than the frequency intervals
+    interval_data = interval_data[interval_data['Days to Max Date']>=sample_freq]
 
-    adj_count = []
-    for i, row in interval_data.iterrows():
-        if row['Days to Max Date'] < 30:
-            ma2 = (interval_data.iloc[i-1,interval_data.columns.get_loc('Avg LOS Days')] +
-                        interval_data.iloc[i-2,interval_data.columns.get_loc('Avg LOS Days')]) / 2
-            adj_count.append(round(ma2))
-        else:
-            adj_count.append(round(row['Avg LOS Days']))
-    
-    interval_data['Adjusted Avg LOS Days'] = adj_count
-    
-    _30_day_los_df = interval_data.drop(columns = ['Avg LOS Days','Days to Max Date'])
-    
-    return _30_day_los_df
+    return interval_data
 
 def train_test_MLR(source_df,target_variable, regressor_ls, test_size = 0.2, random_state = None):
     # Scale the entire dataset
@@ -315,3 +484,4 @@ def fit_scale_linear_reg(final_df,regressor_ls):
     plt.show()
 
     return model, IS_mae, OS_mae
+    
