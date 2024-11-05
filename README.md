@@ -111,7 +111,7 @@ Instead of feeding all of these variables into our final ARIMA model simultaneou
 
 # Requirements & Dependencies
 
-`
+```
 boto3==1.28.4
 matplotlib==3.7.1
 numpy==1.24.3
@@ -121,4 +121,4 @@ pmdarima==2.0.3
 scikit_learn==1.3.0
 seaborn==0.13.2
 statsmodels==0.14.0
-`
+```
