@@ -1,61 +1,109 @@
-# New York City Department of Correction Jail Population Timeseries Analysis
+# New York City Department of Correction Jail Population Time Series Analysis
 
-This repository contains the scripts used to engineer and select features for the time series analysis and forecasting of DOC Jail Population.
-After testing multiple machine learning techniques for predicting future jail population (ARIMA, ARIMAX, and linear regression) and measure the performance across all models, we chose to use a linear regression model. 
+This repository contains the scripts used to engineer and select features for the time series analysis and forecasting of NYC Jail Population.
 
-After analyzing the average daily jail population from July 2021 to current day, we found that the jail population does not have a strong seasonal component but does have a strong upward trend through time. We also found that the ADP is highly correlation with the admission counts for a given time period and the number of individuals in custody 4 months prior to the current month. This aligns with our subject matter expertise as we know that average length of stay for individuals in custody is roughly 110 days or 3.5 months. Therefore, we expect the number of individuals in custody 4 months ago to be negatively correlated with the current month's population. 
+After testing multiple machine learning techniques for predicting future jail population (ARIMA, ARIMAX, SARIMAX, and linear regression) and measure the performance across all models, we chose to use a SARIMAX model. 
 
-Explore the data sources and methodology used throughout this project below. The finding in this repository are used to create the automated projections in the New York City Jail Population Tracker here [ADD LINK HERE].
+After analyzing the average daily jail population from June 2016 to current day, we found that the jail population does not have a strong seasonal component but does have a strong upward trend through time. We also found that the ADP is highly correlated with the misdemeanor, nonviolent felony, and violent felony crime and arrest counts for a given time 30-day period. 
+
+Explore the data sources and methodology used throughout this project below. The findings in this repository are used to create the automated projections in the New York City Jail Population Tracker here [ADD LINK HERE].
 
 
 # Data Sources
 
 All of the data used in this analysis are open-source data provided by NYC Open Data Portal. We access this data through the Socrata querying language, SoSQL. 
 
-**Dependent Variable/Target Variable: 30-day Average Daily Population of Individuals in DOC Custody.**
+**Dependent Variable/Target Variable:Daily Jail Population**
 
-Published by the NYC Department of Correction (DOC) on the NYC Open Data Portal, the [Daily Inmates in Custody](https://data.cityofnewyork.us/Public-Safety/Daily-Inmates-In-Custody/7479-ugqb/about_data) dataset reports individuals in custody and their attributes (race, gender, age, custody level, mental health designation, top charge, legal status, sealed status, security risk group membership, and infraction flag).
+Published by the NYC Department of Correction (DOC) on the NYC Open Data Portal,
+the [Daily Inmates in Custody](https://data.cityofnewyork.us/Public-Safety/Daily-Inmates-In-Custody/7479-ugqb/about_data) dataset reports people in custody and their attributes (race, gender, age, custody level, mental health designation, top charge, legal status, sealed status, security risk group membership, and infraction flag).
 
-It is important to note that this dataset is not historical, therefore we leveraged Amazon Web Services and the Socrata API querying functionality to create a database to store and aggregate the daily files. The earliest record we have obtained from the Open Data Portal is July 27, 2021 and we hope to continue data collection in the future. 
+This dataset is not historical. Each day’s jail population snapshot replaces the one posted for the previous day. Therefore we leveraged Amazon Web Services and the Socrata API querying
+functionality to create a database to store and aggregate the daily files. The earliest record we have obtained from the Open Data Portal is June 2, 2016 and we will continue data collection in the future.
 
-Please note that if you try to replicate this analysis and you are outside of the DCJ organization, you will be unable to access the aggregated data through the boto3 package due to lack of credentials.
+**Jail Admission & Discharges**
 
-**Inmate Admission & Discharges**
+Published by the NYC Department of Correction (DOC) on the NYC Open Data Portal, [Admissions](https://data.cityofnewyork.us/Public-Safety/Inmate-Admissions/6teu-xtgp/about_data) and [Discharges](https://data.cityofnewyork.us/Public-Safety/Inmate-Discharges/94ri-3ium/about_data) datasets report people's admissions and discharges with attributes (race, gender, legal status, top charge). This dataset excludes sealed cases. Unlike the daily jail population dataset, these datasets are historical so we can use the Socrata API querying functionality to obtain 30-day admission & discharge counts for the same 30-day periods as our daily population data mentioned above. We also use the discharge dataset to calculate average length of stay for people discharged every 30 days. We will use these metrics as inputs to our model, given that admission and discharge counts and length of stay are highly correlated to the population in DOC custody during any given time period.
 
-Published by the NYC Department of Correction (DOC) on the NYC Open Data Portal, the [Inmate Admissions](https://data.cityofnewyork.us/Public-Safety/Inmate-Admissions/6teu-xtgp/about_data) and [Inmate Discharges](https://data.cityofnewyork.us/Public-Safety/Inmate-Discharges/94ri-3ium/about_data) datasets report inmate admissions and discharges with attributes (race, gender, legal status, top charge). This data set excludes Sealed Cases. Unlike the Daily Inmates in Custody dataset, these datasets are historical so we can use the Socrata API querying functionality to get 30-day admission & discharge counts for the same 30-day periods as our daily population data mentioned above. We also using the Inmate Discharge dataset to calculate average length of stay for individuals discharged every 30-days. We will use these metrics as inputs to our model as admission and discharge counts, and length of stay are highly correlated to the population of individuals in DOC custody during a given time period.
-
+**Crime Complaints & Arrests**
+Published by the New York City Police Department (NYPD) on the NYC Open Data Portal, [crime complaints]("https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Historic/qgea-i56i/about_data) and [arrest](https://data.cityofnewyork.us/Public-Safety/NYPD-Arrests-Data-Historic-/8h9b-rp9u/about_data) datasets
+report valid felony, misdemeanor, and violation crimes reported to and arrests made by the NYPD beginning in 2006.
+Unlike the daily jail population dataset, these datasets are historical. Therefore, we can use the Socrata API querying
+functionality to obtain 30-day crime & arrest counts for the same prior 30-day periods as our daily population data mentioned above.
 
 
 # Methodology
 
-**Step 1: Data Retreival and Aggregation**
+## Step 1: Data Retrieval and Aggregation
 
-Using the SoSQL language we will grab exogenous variables from NYC Open Data Portal. We will also retreive our daily inmates in custody historical data using boto3 package from the AWS S3 bucket. 
+**Notebook:** `/Scripts/01_get_data.ipynb`
 
-Both datasets with be aggregated to 30-day rolling averages of counts to be using in the analysis.
+We will use boto3 package to get the historical daily inmates in custody data from our secure S3 bucket in AWS. *Note: you will not be able to retrieve this data unless you are a part of the DCJ organization and have configured the proper AWS credentials for your computer.*
 
+**If you are attempting to clone this repository but do not have access to our AWS data warehouse, SKIP this notebook and use the static data in the `/Data` folder of this project.**
 
-**Step 2: Feature Engineering**
+Independent/Exogenous Variables: We will also use the SoSQL language to grab exogenous variables from NYC Open Data Portal. Refer to the following user-defined functions (UDFs) in the functions.py file to learn more about how we query data from the portal:
 
-**Step 3: Feature Selection**
-Below are the three main techniques used in `_ADP_Feature_Selection.ipynb` to select the important features for our final models.
+* `get_agg_admit_dis_data`
 
-**1. Decision Trees & Feature Importance**
+* `get_crime_data`
 
-First we will fit a decision tree, most likely a random forest regression, to look at the most important features in predicting ADP. This will help us deduce which features to include in our final regression. Since multicolinearity is not an issue with decision tree models, we do not need to consider this factor in our first method. However, decision trees can account for non-linear relationships so we should be aware of this when deciding to use linear models for our final predictions.
+* `get_arrest_data`
 
-**2. Colinearity and correlational metrics**
+* `get_los_data`
 
-Since we are most likely not using a decision tree regression for our final model we will need to consider multicolinearity as an issue with our regression model. Therefore we will measure the correlation between regressors and between the regressors and the target variable (ADP) to better understand which regressors should and should not be included in our final model.
+Both datasets will then be aggregated to 30-day rolling averages or counts to be used in the analysis.
 
+## Step 2: Descriptive and Exploratory Analysis
 
-**Step 4: Model Training & Cross-Validation**
+In this section, we explore the characteristics and underlying patterns of the average daily jail population and various exogenous variables. **The analysis below was conducted on population data from June 2, 2016 through September 29, 2024.**
 
-Once we have decided which regressors are most important to predicting ADP, we will train and test a few models on our dataset to measure in and out of sample performance. We will compare the performance for these models to decide which is better suited to our use case. There are additional considerations we made during the cross-validation portion:
+### Dependent Variable: NYC Jail Population
 
+**Notebook:** `/Scripts/02_descriptive_analysis.ipynb`
 
-* small sample size: Due to the small sample sizes during model fit, it is difficult to definitely deduce statistically significant relationships between DV and IVs. We should limit the number of regressors and therefore pick the models with a maximum of three IVs.
+The goal of this noteboook is to visualize the past trends of the jail population data. This will inform of major trends in the jail population data for later time series analysis and which exogenous variables are more or less correlated to our DV.
 
-* overfitting: model is overfitting the data due to too many regressors  
+We utilize several techniques to understand the distribution and structure of the jail population data, starting with visualizations of its distribution. Time series decomposition is employed to break down the signal into its core components—trend, seasonality, and residuals—offering insights into the temporal dynamics of the jail population.
 
-* subject matter expertise: Jail populations is a system created by the criminal legal system with clear relationships with admissions, discharges, arraignments, arrests, crime, etc. We will not overlook our subject matter expertise when it comes to any of the results seen throughout our methodology and will let is guide us to the final decision.
+We also assess the strength of relationships between the jail population and exogenous variables using Pearson’s correlation, which measures the linear association between these variables. The exogenous variables we have collected include:
+
+* 30-Day total misdemeanor crime, nonviolent felony crime, and violent felony crime counts.
+
+* 30-Day total misdemeanor arrest, nonviolent felony arrest, and violent felony arrest counts.
+
+* 30-Day DOC admission and discharge counts.
+
+* 30-Day average length of stay (LOS).
+
+Autocorrelation and partial autocorrelation plots of the historical ADP provide additional information about the persistence of values over time and help identify underlying autoregressive relationships. Some of the methods described below include bimodal distributions, k-means clustering, seasonal decomposition, ACF & PACF, Pearson’s correlation, and partial correlation.
+
+### Exogenous Variables Time Series Analysis
+
+**Notebook:** `/Scripts/03_exog_vars_ts_analysis.ipynb`
+
+The exogenous variables we have collected for this analysis include several crime, arrest, and jail activity metrics sampled at 30-day intervals. These are:
+
+* 30-Day total misdemeanor crime, nonviolent felony crime, and violent felony crime counts.
+
+* 30-Day total misdemeanor arrest, nonviolent felony arrest, and violent felony arrest counts.
+
+* 30-Day DOC admission and discharge counts.
+
+* 30-Day average length of stay (LOS).
+
+To gain a better understanding of the trends within each exogenous variable (misdemeanor, nonviolent & violent felony crime and arrest counts), we conducted the same descriptive and exploratory tests as mentioned above for the exogenous variables (seasonal decomposition, ADF tests, ACF and PACF).
+
+## Step 3: Model Training & Cross-Validation**
+
+In this notebook we will create a method that iterates through the possible ARIMA parameters (p,d,q) and measure the average mean absolute error (MAE) across a number of train-test splits conducted using a [rolling-window technique](https://medium.com/@soumyachess1496/cross-validation-in-time-series-566ae4981ce4). Doing so allows us to pick the best model based on the out-of-sample performance and will ensure our future predictions are as accurate as possible. 
+
+After further investigation, not included in this notebook, we have decided to look into the following exogenous variables:
+
+* 30-Day misdemeanor, violent felony, and nonviolent felony crime counts
+
+* 30-Day misdemeanor, violent felony, and nonviolent felony arrest counts
+
+* 30-Day Admissions to DOC.
+
+Instead of feeding all of these variables into our final ARIMA model simultaneously, we will conduct a "funnel approach" which aims to replicate the way the criminal legal system operates. In that a crime occurs first, which may or may not be followed by an arrest, which may or may not be followed by detention (jail admission). This will help us minimize collinearity throughout the modelling process and will help us dictate whether or not these exogenous variables are increasing our predictive power by being compared to a model with the absence of exogenous variables.
