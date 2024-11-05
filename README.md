@@ -108,3 +108,17 @@ After further investigation, not included in this notebook, we have decided to l
 * 30-Day Admissions to DOC.
 
 Instead of feeding all of these variables into our final ARIMA model simultaneously, we will conduct a "funnel approach", which aims to replicate the way the criminal legal system operates. Specifically a crime occurs first, which may or may not be followed by an arrest, which may or may not be followed by detention (jail admission). This funnel approach will help us minimize collinearity throughout the modelling process and will help us dictate whether or not these exogenous variables are increasing our predictive power by being compared to a model with the absence of exogenous variables.
+
+# Requirements & Dependencies
+
+`
+boto3==1.28.4
+matplotlib==3.7.1
+numpy==1.24.3
+pandas==2.2.3
+pingouin==0.5.5
+pmdarima==2.0.3
+scikit_learn==1.3.0
+seaborn==0.13.2
+statsmodels==0.14.0
+`
