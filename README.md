@@ -6,7 +6,7 @@ After testing multiple machine learning techniques for projecting the future jai
 
 After analyzing the average daily jail population (ADP) from June 2016 to current day, we found that the jail population does not have a strong seasonal component but does have a strong upward trend through time. We also found that the ADP is highly correlated with the misdemeanor, nonviolent felony, and violent felony crime and arrest counts for a given time 30-day period. 
 
-Explore the data sources and methodology used throughout this project below. The findings in this repository are used to create the automated projections in the New York City Jail Population Tracker (here)[https://nyc-jail-population-tracker.datacollaborativeforjustice.org/].
+Explore the data sources and methodology used throughout this project below. The findings in this repository are used to create the automated projections in the New York City Jail Population Tracker [here](https://nyc-jail-population-tracker.datacollaborativeforjustice.org/).
 
 
 # Data Sources
